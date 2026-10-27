@@ -14,8 +14,8 @@
 //! - **Voice FX:** `dist` (asymmetric, 18 dB, the default 2× oversampling) into a `ladder` band-pass (the MSEG moves
 //!   its cutoff) into a `formant` (a vowel between "o" and "i": a **synced LFO**, a dotted eighth against the MSEG's
 //!   eighth, sweeps F2). Four voice-FX slots are the most; three are used.
-//! - **FX:** `ott` (60 %, report 04's depth), `chorus` (default, 30 % mix) and, when lane DLY has merged, a synced
-//!   `delay` (dotted eighth, 30 % feedback, ping-pong, 25 % mix).
+//! - **FX:** `ott` (60 %, report 04's depth), `chorus` (default, 30 % mix) and a synced `delay` (dotted eighth, 30 %
+//!   feedback, ping-pong, 25 % mix).
 //! - **Voices:** `polyphony` 8, the default for G2 (docs/phase-s2.md, open check "G2's voice count and budget"), and
 //!   the bench holds an eight-note chord in the bass register ([`KEYS`]).
 //!
@@ -70,8 +70,7 @@ pub struct G2 {
     pub ladder: bool,
     /// Whether the `formant` is in the voice-FX chain.
     pub formant: bool,
-    /// Whether the `delay` is in the FX chain (it is a stub until lane DLY merges, so the reference leaves it out
-    /// until then).
+    /// Whether the `delay` is in the FX chain.
     pub delay: bool,
 }
 
@@ -85,7 +84,7 @@ impl Default for G2 {
             position_mod: true,
             ladder: true,
             formant: true,
-            delay: false,
+            delay: true,
         }
     }
 }

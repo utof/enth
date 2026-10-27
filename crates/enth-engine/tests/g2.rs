@@ -216,6 +216,7 @@ fn the_reference_has_the_modules_the_brief_names() {
         ModuleKind::Lfo,
         ModuleKind::Ott,
         ModuleKind::Chorus,
+        ModuleKind::Delay,
     ] {
         assert!(kinds.contains(&k), "G2 uses {k:?}");
     }

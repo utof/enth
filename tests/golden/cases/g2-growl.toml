@@ -1,4 +1,4 @@
-description = "S2a G2B, the G2 reference patch (benches/common/g2.rs, report 04's S4 FM growl): a wt on the basic table at 60 % with 7-copy unison (22 cents, blend 80 %, spread 60 %), phase-modulated by a sine osc1 at level 0 through an audio route, an MSEG (a loop of one eighth note at 140 BPM, five bent points) moving pm_index by 4 radians and the table position by 25 %; dist (asymmetric, 18 dB, x2) into a ladder band-pass (the MSEG on its cutoff) into a formant (a dotted-eighth synced LFO on F2); ott, chorus. Eight voices: the bass-register chord E1 B1 E2 G2 B2 E3 G3 B3 enters 50 ms apart and is held for a second. Master -9 dB. Guards the whole S2a voice path, the stereo plan (a unison wt runs the voice-FX chain twice) and the effects chain; the budget and the real-time rows are in docs/benchmarks.md."
+description = "S2a G2B, the G2 reference patch (benches/common/g2.rs, report 04's S4 FM growl): a wt on the basic table at 60 % with 7-copy unison (22 cents, blend 80 %, spread 60 %), phase-modulated by a sine osc1 at level 0 through an audio route, an MSEG (a loop of one eighth note at 140 BPM, five bent points) moving pm_index by 4 radians and the table position by 25 %; dist (asymmetric, 18 dB, x2) into a ladder band-pass (the MSEG on its cutoff) into a formant (a dotted-eighth synced LFO on F2); ott, chorus and a synced delay (a dotted eighth, ping-pong). Eight voices: the bass-register chord E1 B1 E2 G2 B2 E3 G3 B3 enters 50 ms apart and is held for a second. Master -9 dB. Guards the whole S2a voice path, the stereo plan (a unison wt runs the voice-FX chain twice) and the effects chain; the budget and the real-time rows are in docs/benchmarks.md."
 sample_rate = 48000
 seconds = 1.6
 
@@ -37,6 +37,7 @@ modulators = [
 fx = [
     { id = "ott1", kind = "ott", params = { depth = 60 } },
     { id = "chorus1", kind = "chorus", params = { mix = 30 } },
+    { id = "delay1", kind = "delay", params = { feedback = 30, ping_pong = true, mix = 25 } },
 ]
 routes = [
     { src = "osc1", dst = "wt1.pm", depth = 100.0 },
