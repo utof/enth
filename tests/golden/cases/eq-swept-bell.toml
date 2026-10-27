@@ -1,0 +1,27 @@
+description = "S2a EQ: a swept bell: bell 1 at 800 Hz, +14 dB, Q 5, its centre moved by a 0.7 Hz global sine LFO at 12 % of the log range (20 Hz to 20 kHz is three decades, so about 0.36 decades each way). Guards the per-segment coefficient ramps and a global modulator driving the eq. The reference voice goes through a gate envelope (attack 0, decay 0, sustain 100 %, release 0) so lane D2's envelope curves do not move it, on a saw (lane D1's) chord of three notes with off-grid times."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 0.9 },
+    { key = 57, velocity = 0.9, on_s = 0.0171, off_s = 0.9 },
+    { key = 64, velocity = 0.8, on_s = 0.3, off_s = 1.0 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1" }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+fx = [
+    { id = "eq1", kind = "eq", params = { bell1_freq = 800, bell1_gain = 14, bell1_q = 5 } },
+]
+modulators = [
+    { id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } },
+    { id = "lfo1", kind = "lfo", params = { shape = "sine", rate = 0.7, scope = "global" } },
+]
+routes = [
+    { src = "lfo1", dst = "eq1.bell1_freq", depth = 12.0 },
+]
