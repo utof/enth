@@ -55,6 +55,10 @@ pub fn module(name: &str, kind: ModuleKind, set: &[(usize, f32)]) -> ModuleInsta
 /// The choices that make up a G2 variant. [`G2::default`] is the reference patch; the bench measures the others to
 /// show what each choice costs (docs/benchmarks.md, "The G2 row").
 #[derive(Clone, Copy, Debug)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag is one independent choice of the variant, named in the bench"
+)]
 pub struct G2 {
     /// `polyphony`.
     pub voices: u32,

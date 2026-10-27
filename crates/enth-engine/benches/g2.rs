@@ -296,8 +296,8 @@ fn crossfade_blocks(mut p: Playing) -> Playing {
 // - mono_1_copy 925,149,459 (9,637); voices_6 1,455,039,085 (15,157); voices_6_hard 1,127,536,761 (11,745);
 //   voices_4 1,019,252,376 (10,617);
 // - the 64-frame blocks: normal 1,257,684 (19,651 per frame); instant 1,351,210; crossfade_swap
-//   3,405,141 (2.7x a normal block: both plans run two segments, and the delay's 768,000-byte rings and the
-//   chorus's 32 KiB are copied, about 0.79 M instructions of memory traffic; the wall clock of that copy is in
+//   3,405,141 (2.7x a normal block: both plans run, and the delay's 768,000-byte rings and the chorus's 32 KiB are
+//   copied, which is the 0.88 M instructions it has over a crossfade block; the wall clock of that copy is in
 //   docs/benchmarks.md); crossfade (three blocks) 7,561,321 (2.0x a normal block each: both plans run).
 const REFERENCE_IR: u64 = 2_077_384_000;
 const DIST_OFF_IR: u64 = 1_647_160_000;
