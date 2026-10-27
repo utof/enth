@@ -1,0 +1,13 @@
+# Hand-picked solution for the goal of the same name: what `cargo xtask agent-eval --dry-run` replays as its scripted
+# fake agent, and the proof that the goal's expectation list (and its structure) is reachable with the current engine.
+# SPOILER: this is the answer; the agent under test never sees this directory (it runs in an empty temp dir with only
+# an `enth` wrapper). `{perf}` and `{expect}` are filled in from the goal (or from self_expect on the self-written track).
+schema = "enth.agent-eval-witness/1"
+id = "bass-fold-sine"
+self_expect = "pitch.note ~ A1, brightness > 400Hz, sustain > -8dB, peak < -1dB"
+
+[[step]]
+args = ["new", "--template", "init", "--out", "sound.patch.json"]
+
+[[step]]
+args = ["step", "sound.patch.json", "--ops", '[{"set":"osc1.wave","to":"sine"},{"add":"dist","at":"voice_fx[0]","params":{"mode":"sine_fold","drive":"30dB","keep_lows":"20Hz"}},{"set":"env1.sustain","to":"100%"},{"set":"master.level","to":"-9dB"}]', "--perf", "{perf}", "--expect", "{expect}"]

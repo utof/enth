@@ -7,10 +7,19 @@
 //!   `thin` item;
 //! - the untouched starting patch (`enth new --template <goal.template>`) fails the designer's list;
 //! - with `--cross`, every other goal's witness patch is judged against this goal's list and performance (reported,
-//!   not gated: a patch played on another note can be a fair answer).
+//!   not gated: a patch played on another note can be a fair answer; the sound only, not the goal's `requires`).
+//!
+//! A goal with `requires` (eval version 4) is judged on the sound **and** the structure, as the trial judge does; the
+//! starting-patch rule and `--cross` look at the sound alone.
+//!
+//! After the table the audit prints what an agent can find through the CLI's own surfaces (`enth modules` and
+//! `enth params <kind>`) for the kinds the goals require: a reserved kind that `enth modules` hides is reported, and
+//! `--require-discoverable` (INT-S2a, after it clears the hide flags) turns that into a failure. A kind that
+//! `enth params` cannot describe is always a failure.
 //!
 //! It exits with an error when any goal breaks one of the first two rules.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -18,6 +27,7 @@ use serde_json::Value;
 
 use super::goal::{Goal, fill};
 use super::run::{self, Opts};
+use super::structure::{self, What};
 use super::util;
 
 /// What one judged `enth check` says, in the terms the audit gates on.
@@ -81,6 +91,19 @@ impl Audit {
         ))
     }
 
+    /// The sound and the structure: what the trial judge decides (`requires` unmet make the verdict fail).
+    fn judge_built(&self, dir: &Path, patch: &str, goal: &Goal) -> Result<Verdict, String> {
+        let mut v = self.judge(dir, patch, goal)?;
+        let unmet = structure::check(&self.enth, dir, Path::new(patch), &goal.requirements())?;
+        if !unmet.is_empty() {
+            v.pass = false;
+            v.failing
+                .extend(unmet.into_iter().map(|u| format!("requires {u}")));
+        }
+        Ok(v)
+    }
+
+    /// The sound alone: `enth check` of the patch with the goal's performance and designer list.
     fn judge(&self, dir: &Path, patch: &str, goal: &Goal) -> Result<Verdict, String> {
         let args = [
             "check",
@@ -103,6 +126,83 @@ impl Audit {
         let json: Value =
             serde_json::from_str(&out).map_err(|e| format!("{}: check output: {e}", goal.id))?;
         Ok(verdict(&json))
+    }
+
+    /// What an agent finds through `enth modules` and `enth params <kind>` for the kinds the goals require. Prints a
+    /// report and returns the problems: a kind `enth params` cannot describe, and (with `strict`) a kind
+    /// `enth modules` does not list.
+    fn discovery(&self, goals: &[&Goal], strict: bool) -> Result<Vec<String>, String> {
+        let needed = required_kinds(goals);
+        if needed.is_empty() {
+            return Ok(Vec::new());
+        }
+        let dir = self.dir("_discovery", "modules")?;
+        let (code, out) = self.enth(&dir, &["modules".to_owned()])?;
+        if code != 0 {
+            return Err(format!("enth modules exited {code}: {}", out.trim()));
+        }
+        let listed: BTreeSet<String> = serde_json::from_str::<Value>(&out)
+            .map_err(|e| format!("enth modules output: {e}"))?
+            .get("modules")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.get("kind").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        println!("\ndiscovery: the kinds the goals require, through the CLI's own surfaces");
+        println!(
+            "{:<10} {:<8} summary (`enth params <kind>`)",
+            "kind", "modules"
+        );
+        let mut problems = Vec::new();
+        let mut hidden = Vec::new();
+        for kind in &needed {
+            let (code, out) = self.enth(&dir, &["params".to_owned(), kind.clone()])?;
+            let summary = (code == 0)
+                .then(|| serde_json::from_str::<Value>(&out).ok())
+                .flatten()
+                .and_then(|v| {
+                    let params = v
+                        .get("params")
+                        .and_then(Value::as_array)
+                        .map_or(0, Vec::len);
+                    let text = v.get("summary").and_then(Value::as_str)?.to_owned();
+                    (params > 0 && !text.trim().is_empty()).then_some(text)
+                });
+            let is_listed = listed.contains(kind);
+            if !is_listed {
+                hidden.push(kind.as_str());
+            }
+            println!(
+                "{:<10} {:<8} {}",
+                kind,
+                if is_listed { "listed" } else { "hidden" },
+                summary.as_deref().unwrap_or("NOT DESCRIBED")
+            );
+            if summary.is_none() {
+                problems.push(format!(
+                    "discovery: `enth params {kind}` does not describe a kind the goals require"
+                ));
+            }
+        }
+        if hidden.is_empty() {
+            println!("every required kind is in `enth modules`");
+        } else {
+            println!(
+                "{} of {} required kinds are hidden from `enth modules` (a reserved S2a kind, \
+                 ModuleSpec::hidden): an agent that does not already know {} cannot find them by listing; INT-S2a clears the flag",
+                hidden.len(),
+                needed.len(),
+                hidden.join(", ")
+            );
+            if strict {
+                problems.push(format!(
+                    "discovery: `enth modules` does not list {}",
+                    hidden.join(", ")
+                ));
+            }
+        }
+        Ok(problems)
     }
 
     fn dir(&self, goal: &str, what: &str) -> Result<PathBuf, String> {
@@ -143,14 +243,16 @@ impl Audit {
     }
 }
 
-/// `agent-eval audit [--goals a,b] [--cross] [--enth PATH]`.
+/// `agent-eval audit [--goals a,b] [--cross] [--require-discoverable] [--enth PATH]`.
 pub fn audit(args: &[String]) -> Result<(), String> {
     let mut opts = Opts::default();
     let mut cross = false;
+    let mut require_discoverable = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--cross" => cross = true,
+            "--require-discoverable" => require_discoverable = true,
             "--enth" => opts.enth = Some(PathBuf::from(it.next().ok_or("--enth needs a path")?)),
             "--goals" => {
                 opts.goals = Some(
@@ -203,7 +305,7 @@ pub fn audit(args: &[String]) -> Result<(), String> {
             let dir = audit.dir(&goal.id, track)?;
             let verdict = audit
                 .replay(goal, &steps, list, &dir)
-                .and_then(|()| audit.judge(&dir, super::fake::PATCH, goal));
+                .and_then(|()| audit.judge_built(&dir, super::fake::PATCH, goal));
             match verdict {
                 Ok(v) => {
                     if !v.pass {
@@ -288,9 +390,10 @@ pub fn audit(args: &[String]) -> Result<(), String> {
             );
         }
     }
+    problems.extend(audit.discovery(&goals, require_discoverable)?);
     if problems.is_empty() {
         println!(
-            "\nagent-eval audit: {} goals ok (witness passes both lists with no thin item; the start fails)",
+            "\nagent-eval audit: {} goals ok (witness passes both lists and its structure with no thin item; the start fails)",
             goals.len()
         );
         Ok(())
@@ -301,6 +404,30 @@ pub fn audit(args: &[String]) -> Result<(), String> {
             problems.join("\n  ")
         ))
     }
+}
+
+/// The module kinds the goals' `requires` name (a route's source counts unless it is `any` or a control source).
+fn required_kinds(goals: &[&Goal]) -> BTreeSet<String> {
+    let mut kinds = BTreeSet::new();
+    for goal in goals {
+        for r in goal.requirements() {
+            match r.what {
+                What::Kind { kind, .. } | What::Param { kind, .. } => {
+                    kinds.insert(kind);
+                }
+                What::Route { src, dst, .. } => {
+                    let control = src == "any"
+                        || src.starts_with("macro")
+                        || ["velocity", "key", "modwheel"].contains(&src.as_str());
+                    if !control {
+                        kinds.insert(src);
+                    }
+                    kinds.insert(dst);
+                }
+            }
+        }
+    }
+    kinds
 }
 
 /// Items in an expectation list: commas inside `[...]` belong to the item.

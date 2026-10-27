@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-wobble-dotted-mseg"
+added = "2026-10-27"
+difficulty = 5
+tags = ["synced-wobble", "bass", "wobble", "sync", "mseg", "filter", "sweep", "tempo", "s2a"]
+brief = "a dubstep wobble drawn with an MSEG: a looping shape on the low-pass cutoff, one cycle every dotted eighth note, locked to the tempo (the CLI plays at 140 BPM)"
+template = "init"
+expect = "pitch.note ~ A1, filter_lfo in [2.6Hz, 3.6Hz], filter_sweep > 1oct, brightness in [350Hz, 900Hz], sustain > -8dB, release < 400ms, peak < -1dB"
+requires = ["mseg.sync = on", "mseg -> svf.cutoff"]
+rationale = "The synced wobble drawn with an MSEG: its default shape looping on the low-pass cutoff, one cycle every dotted eighth (`beats = eighth_dotted`, unipolar, +3 octaves). At 140 BPM that is 3.111 Hz and the witness reads 3.108 Hz with no measurement noise; the window 2.6 Hz to 3.6 Hz keeps out the eighth (4.667 Hz) and the quarter (2.335 Hz), so a model that guesses the wrong note value fails. The sweep is 1.9 octaves (over 1), the centroid 576 Hz (350 Hz to 900 Hz) and the level -4.3 dB (over -8). A free LFO at 3.111 Hz passes the sound list (negative control), so `requires` asks for `mseg.sync = on` and the MSEG routed to the filter cutoff. The note is held 4 s, about 12 cycles. The blank template fails 3 of 7 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 4.0 }], dur_s = 5.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

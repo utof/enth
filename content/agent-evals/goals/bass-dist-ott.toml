@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-dist-ott"
+added = "2026-10-27"
+difficulty = 4
+tags = ["dist-ott", "bass", "distortion", "ott", "compression", "dist", "s2a"]
+brief = "a loud, dense, bright bass: a distortion on the voice, then OTT on the mix, level and dense with no bump at the start of the note"
+template = "init"
+expect = "pitch.note ~ A1, brightness in [1.2kHz, 2.4kHz], loudness > -18LUFS, peak < -1dB, sustain > -4dB, decay < 30ms, noisiness < 0.05, clipping = false"
+requires = ["dist", "ott"]
+rationale = "Distortion followed by OTT, the loud dense bass-music chain. The witness is a low-pass at 700 Hz, a soft clipper at 15 dB on the voice, OTT on the mix (depth 70 %, time 10 %, output 6 dB) and a 5 ms attack; the engine runs voice effects before mix effects, so the order is fixed by where each is added. The list reads the outcome: a bright centroid (1447 Hz, window 1.2 kHz to 2.4 kHz), loud (-15.9 LUFS, over -18) but under the ceiling (peak -6.6 dB, under -1) and not clipping, held level (sustain -1.8 dB, over -4) and no bump at the start of the note (`decay < 30ms`, the witness reads 4 ms), clean (noise ratio 4e-5). The peak moves 2.5 dB with the oscillator's start phase, so the master level leaves 5.6 dB under its limit. The descriptors cannot see OTT: the same patch without it passes the sound list (negative control), so `requires` asks for both `dist` and `ott`. The blank template fails 3 of 8 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 2.0 }], dur_s = 3.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

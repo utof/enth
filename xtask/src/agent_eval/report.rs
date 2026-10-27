@@ -372,6 +372,27 @@ mod tests {
     }
 
     #[test]
+    fn a_trial_result_written_by_eval_version_three_still_reads() {
+        // `result.json` as versions 1 to 3 wrote it: version 4 added no key to it (a failed structure check shows
+        // in `failed` as `requires ...`), so every older run directory still rebuilds its summary.
+        let old = r#"{"schema":"enth.agent-eval.trial/1","eval_version":3,"goal":"pluck-bright-short","track":"Given",
+            "trial":1,"runner":"claude-code","model":"claude-sonnet-5-5","date":"2026-10-21T10:00:00Z",
+            "claude_code_version":"2.1.0","status":"ok",
+            "tokens":{"input":100,"output":50,"cache_read":0,"cache_write":0,"total":150},
+            "cost_usd":0.14,"cost_is_estimate":true,"turns":9,"wall_s":31.5,"calls":9,"invalid_calls":1,
+            "refused_calls":0,"renders":4,"pass":true,"thin":0,
+            "margins":[{"expect":"envelope.attack_ms < 10","pass":true,"got":4,"margin":6.0,"margin_pct":60.0,
+                        "unit":"ms","thin":false}],
+            "failed":[],"own_expect":null,"own_pass":null,"own_error":null,
+            "final_patch":"final.patch.json","final_wav":"final.wav","patch_source":"answer",
+            "produced_by_enth":true,"dir":"target/agent-eval/x","warnings":[]}"#;
+        let r: TrialResult = serde_json::from_str(old).expect("a version 3 result reads");
+        assert_eq!((r.eval_version, r.pass, r.renders), (3, true, 4));
+        let again = serde_json::to_value(&r).expect("writes");
+        assert_eq!(again["goal"], "pluck-bright-short");
+    }
+
+    #[test]
     fn a_goal_passes_on_a_strict_majority_of_its_trials() {
         assert!(majority(2, 3));
         assert!(!majority(1, 3));

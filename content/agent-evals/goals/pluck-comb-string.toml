@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "pluck-comb-string"
+added = "2026-10-27"
+difficulty = 4
+tags = ["chain", "pluck", "string", "comb", "noise", "filter", "s2a"]
+brief = "a plucked string made from a burst of noise: a comb filter tuned to the note rings it, and a low-pass takes the fizz off"
+template = "init"
+expect = "tonal_pitch ~ A3, attack < 25ms, duration in [150ms, 700ms], brightness in [800Hz, 2.5kHz], sustain < -30dB, release < 400ms, peak < -1dB"
+requires = ["noise", "comb"]
+rationale = "A plucked string from a burst of noise: a pink `noise` source in place of the oscillator, a keytracked `comb` at 97 % feedback that rings at the note's pitch (the tonal pitch reads A3, 220.3 Hz), and a low-pass that takes the fizz off. The list reads a pluck on a pitch: tonal pitch A3, attack 9 ms (under 25), the level gone before the note ends (sustain -80 dB, under -30), a total duration of 341 ms (150 ms to 700 ms) and a centroid of 1594 Hz (800 Hz to 2.5 kHz). It asks for the tonal pitch (the comb's ring) rather than the played note, and leaves noisiness off because it depends on the noise seed (0.16 on the witness, up to 0.29 with other seeds). A saw into a low-pass with a pluck envelope passes the sound list (negative control), so `requires` asks for `noise` and `comb`. The blank template fails 3 of 7 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A3", vel = 100, on_s = 0.0, off_s = 1.0 }], dur_s = 2.5 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

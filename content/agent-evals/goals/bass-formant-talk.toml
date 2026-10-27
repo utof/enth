@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-formant-talk"
+added = "2026-10-27"
+difficulty = 4
+tags = ["chain", "bass", "formant", "vowel", "filter", "lfo", "sweep", "s2a"]
+brief = "a talking bass: a low saw through a formant filter whose vowel opens and closes about twice a second"
+template = "init"
+expect = "pitch.note ~ A1, filter_lfo in [1.5Hz, 3Hz], filter_sweep > 0.5oct, brightness in [800Hz, 2kHz], sustain > -10dB, release < 400ms, peak < -1dB"
+requires = ["formant", "lfo -> formant.*"]
+rationale = "A talking bass: a formant filter (`f1` 500 Hz, `f2` 1.2 kHz, resonance 70 %) on a low saw, with an LFO at 2 Hz moving `f1`, so the vowel opens and closes. The sweep reads the LFO exactly (2.002 Hz, window 1.5 Hz to 3 Hz) at 0.69 octaves (over 0.5), the centroid sits at 1254 Hz (800 Hz to 2 kHz) and the level at -4.0 dB (over -10). Noisiness is not on the list: it depends on the noise seed (its measurement noise is 0.23) and says nothing about a vowel. A band-pass filter swept by a 2 Hz LFO passes the sound list (negative control), so `requires` asks for a `formant` and an LFO routed to one of its parameters (`lfo -> formant.*`). The blank template fails 3 of 7 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 4.0 }], dur_s = 5.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }

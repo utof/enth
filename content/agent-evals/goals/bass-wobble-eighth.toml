@@ -1,0 +1,13 @@
+schema = "enth.agent-eval/2"
+id = "bass-wobble-eighth"
+added = "2026-10-27"
+difficulty = 4
+tags = ["synced-wobble", "bass", "wobble", "sync", "lfo", "filter", "sweep", "tempo", "s2a"]
+brief = "a dubstep wobble: a low saw whose low-pass filter opens and closes once per eighth note, locked to the tempo (the CLI plays at 140 BPM)"
+template = "init"
+expect = "pitch.note ~ A1, filter_lfo in [4Hz, 5.5Hz], filter_sweep > 1.5oct, brightness in [300Hz, 800Hz], sustain > -8dB, release < 400ms, peak < -1dB"
+requires = ["lfo.sync = on", "lfo -> svf.cutoff"]
+rationale = "The first tempo-synced goal. A synced `lfo` on the low-pass cutoff, one cycle every eighth note. The CLI plays at 140 BPM (`check`, `describe` and `step` have no tempo flag), so an eighth is 4.667 Hz, and the list's `filter_lfo in [4Hz, 5.5Hz]` accepts only that: the quarter is 2.335 Hz, the dotted eighth 3.111 Hz and the sixteenth 9.333 Hz. The witness reads 4.667 Hz with no measurement noise (17 % inside the window), a 3.0 octave sweep (over 1.5), a dark centroid (498 Hz, 300 Hz to 800 Hz) and a held level (-4.4 dB, over -8). Typing `rate = 4.667Hz` on a free LFO gives the same numbers (negative control), which is why the goal exists: `requires` asks for `lfo.sync = on` and the LFO routed to the filter cutoff. The note is held 4 s, about 18 cycles. The blank template fails 3 of 7 items."
+engine_min = "0.3.0"
+perf = { notes = [{ note = "A1", vel = 100, on_s = 0.0, off_s = 4.0 }], dur_s = 5.0 }
+budget = { renders = 20, turns = 60, usd = 1.0 }
