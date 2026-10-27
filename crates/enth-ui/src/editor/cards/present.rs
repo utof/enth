@@ -148,6 +148,55 @@ pub const ITEMS: &[(&str, &str, &str, &str)] = &[
     ("wt", "table", "metal", "Metal"),
     ("wt", "warp", "asymmetric", "Asym"),
     ("wt", "phase_mode", "seeded", "Seed"),
+    // S2a's segmented modes, short enough for a lane card's row beside its label (lane EDS): `ladder` as `svf`'s are,
+    // `chorus` and `mseg` by their longest item.
+    ("ladder", "mode", "lp24", "LP 24"),
+    ("ladder", "mode", "lp12", "LP 12"),
+    ("ladder", "mode", "bp", "BP"),
+    ("ladder", "mode", "hp", "HP"),
+    ("chorus", "mode", "ensemble", "Ens"),
+    ("mseg", "mode", "one_shot", "Once"),
+    ("mseg", "mode", "sustain_loop", "Sustain"),
+];
+
+/// Shorter labels for the dense layout's cells (lane EDS), which are `size.dense.cell_width` wide (48 px) where layout 1's
+/// are 56: the labels of S2a's parameters whose name does not fit them. (kind, key, label). A test measures every label
+/// of every S2a kind against the dense cell.
+pub const DENSE_LABELS: &[(&str, &str, &str)] = &[
+    ("chorus", "feedback", "Feedbk"),
+    ("phaser", "feedback", "Feedbk"),
+    ("delay", "feedback", "Feedbk"),
+    ("comb", "feedback", "Feedbk"),
+    ("wt", "feedback", "Feedbk"),
+    ("svf", "keytrack", "Key trk"),
+    ("comb", "keytrack", "Key trk"),
+    ("ladder", "keytrack", "Key trk"),
+    ("comb", "semi", "Semi"),
+    ("wt", "semi", "Semi"),
+    ("wt", "pm_index", "PM idx"),
+    ("delay", "ping_pong", "Ping"),
+    ("comp", "threshold", "Thresh"),
+    ("voice", "polyphony", "Voices"),
+    ("dist", "keep_lows", "Keep low"),
+    ("formant", "f1", "Form 1"),
+    ("formant", "f2", "Form 2"),
+    ("formant", "resonance", "Reso"),
+    ("ladder", "resonance", "Reso"),
+    ("ott", "downward", "Down"),
+    ("ott", "high_gain", "Hi gain"),
+    ("eq", "low_freq", "Lo shelf"),
+    ("eq", "high_freq", "Hi shelf"),
+    ("eq", "high_gain", "Hi gain"),
+    ("eq", "bell1_gain", "B1 gain"),
+    ("eq", "bell2_gain", "B2 gain"),
+];
+
+/// Shorter item labels for the dense layout's stepped knobs, whose value line is a cell wide (lane EDS): (kind, key,
+/// item key, label).
+pub const DENSE_ITEMS: &[(&str, &str, &str, &str)] = &[
+    ("dist", "mode", "asymmetric", "Asym"),
+    ("dist", "mode", "triangle_fold", "Tri fold"),
+    ("dist", "mode", "downsample", "Decim"),
 ];
 
 /// The enum parameter a card's header names after its title (an oscillator's wave, a filter's mode), if any.
@@ -167,6 +216,39 @@ pub fn label(kind: CardKind, spec: &ParamSpec) -> &'static str {
         .iter()
         .find(|(kk, key, _)| *kk == k && *key == spec.key)
         .map_or(spec.name, |(_, _, label)| label)
+}
+
+/// A parameter's label in a cell of the dense layout (lane EDS): [`DENSE_LABELS`] first, then [`label`].
+pub fn label_in(kind: CardKind, spec: &ParamSpec, dense: bool) -> &'static str {
+    let k = kind_key(kind);
+    dense
+        .then(|| {
+            DENSE_LABELS
+                .iter()
+                .find(|(kk, key, _)| *kk == k && *key == spec.key)
+                .map(|(_, _, label)| *label)
+        })
+        .flatten()
+        .unwrap_or_else(|| label(kind, spec))
+}
+
+/// An enum item's label in the dense layout (lane EDS): [`DENSE_ITEMS`] first, then [`item_label`].
+pub fn item_label_in(
+    kind: CardKind,
+    spec: &ParamSpec,
+    item: &EnumItem,
+    dense: bool,
+) -> &'static str {
+    let k = kind_key(kind);
+    dense
+        .then(|| {
+            DENSE_ITEMS
+                .iter()
+                .find(|(kk, key, ik, _)| *kk == k && *key == spec.key && *ik == item.key)
+                .map(|(.., label)| *label)
+        })
+        .flatten()
+        .unwrap_or_else(|| item_label(kind, spec, item))
 }
 
 /// An enum item's short label (segments, a stepped knob's value), else its catalogue name.
@@ -216,11 +298,14 @@ mod tests {
         for (kind, key, _) in LABELS {
             spec(kind, key);
         }
-        for (kind, key, item, _) in ITEMS {
+        for (kind, key, item, _) in ITEMS.iter().chain(DENSE_ITEMS) {
             assert!(
                 spec(kind, key).enum_index(item).is_some(),
                 "{kind}.{key} has no item {item}"
             );
+        }
+        for (kind, key, _) in DENSE_LABELS {
+            spec(kind, key);
         }
         for (kind, key) in HEADER_ENUM {
             assert!(

@@ -21,10 +21,10 @@ use enth_session::{SessionEdit, SessionView};
 
 use super::add_module::{self, Room};
 use super::browser::{self, Presets};
-use super::cards::view::{self, CardView};
+use super::cards::view::{self, CardView, VISIBLE_TIER};
 use super::cards::{CardKey, Intent, Intents, ids};
 use super::describe;
-use super::layout::{Layout, LayoutError, LayoutSpec, Part, Placed, Region};
+use super::layout::{Density, Layout, LayoutError, LayoutSpec, Part, Placed, Region};
 use super::live::{Fingerprint, Live};
 use super::modulate::{self, SourceDrag};
 use super::overlay::{self, NoOverlay, Overlay};
@@ -45,6 +45,9 @@ pub struct FrameReport {
     /// The next frame the editor asked egui for (lane ED2): `motion.scope_interval()` (1/60 s; lane AM, R1/S1) while
     /// visible live data changes, `None` when it sleeps on the tap (0 frames until input or new data).
     pub repaint: Option<Duration>,
+    /// The density the frame drew with (lane EDS): [`Density::Dense`] for the dense layout, the editor's own or layout 1's
+    /// place taken by it for a patch of S2a's kinds.
+    pub density: Density,
 }
 
 impl FrameReport {
@@ -62,6 +65,13 @@ pub struct Editor {
     layout: Layout,
     /// The theme the layout's tokens were resolved against.
     resolved_for: Theme,
+    /// `resolved_for` with the dense cards' sizes (lane EDS): what the card regions of a dense layout draw with.
+    dense_theme: Theme,
+    /// The built-in layout `dense` (lane EDS), drawn in `layout`'s place while [`Editor::set_auto_dense`] is on, `layout`
+    /// is layout 1 and the patch holds a module of one of S2a's kinds.
+    dense_layout: Layout,
+    /// Whether a patch of S2a's kinds is drawn in the dense layout (see [`Editor::set_auto_dense`]).
+    auto_dense: bool,
     /// The gesture a drag opened, until its `End` (or the pointer's release anywhere).
     gesture: Option<GestureId>,
     /// Cards whose "More" disclosure is open.
@@ -129,6 +139,9 @@ impl Editor {
         Editor {
             layout,
             resolved_for: theme.clone(),
+            dense_theme: theme.dense(),
+            dense_layout: dense_layout(theme),
+            auto_dense: false,
             gesture: None,
             more: BTreeSet::new(),
             overlay: Box::new(NoOverlay),
@@ -165,6 +178,13 @@ impl Editor {
         self.layout = Layout::new(spec, theme)?;
         theme.clone_into(&mut self.resolved_for);
         Ok(())
+    }
+
+    /// Whether a patch with a module of S2a's kinds (see [`holds_s2a`]) is drawn in the built-in `dense` layout while
+    /// the editor's own layout is layout 1 (lane EDS). Off by default, so an editor built for a test or a layout
+    /// file draws exactly the layout it was given; the shell turns it on unless `ENTH_LAYOUT` named a layout.
+    pub fn set_auto_dense(&mut self, on: bool) {
+        self.auto_dense = on;
     }
 
     /// The layout in use.
@@ -431,7 +451,13 @@ impl Editor {
 
     /// The cards of one part of `patch`, with "More" state, live values, modulation ranges, the drop check of a
     /// dragged source and the overlay applied.
-    fn cards(&self, patch: &Patch, part: Part, drag: Option<&ModSource>) -> Vec<CardView> {
+    fn cards(
+        &self,
+        patch: &Patch,
+        part: Part,
+        drag: Option<&ModSource>,
+        density: Density,
+    ) -> Vec<CardView> {
         let mut cards = match part {
             Part::Generators => view::section(patch, Section::Generators),
             Part::VoiceFx => view::section(patch, Section::VoiceFx),
@@ -442,6 +468,12 @@ impl Editor {
         };
         for card in &mut cards {
             card.more_open = self.more.contains(&card.key);
+            // A dense layout shows the intermediate tier of every card and the audio inputs (lane EDS).
+            if density == Density::Dense {
+                card.visible = card.visible.max(VISIBLE_TIER);
+                card.audio_shown = true;
+                card.dense = true;
+            }
             for p in &mut card.params {
                 if !p.routes.is_empty() {
                     p.range = modulation_range(patch, &p.addr)
@@ -452,6 +484,18 @@ impl Editor {
                 if let Some(src) = drag {
                     p.drop = Some(modulate::check(patch, src, &p.addr, p.spec));
                 }
+            }
+        }
+        // A generator is an audio source when another generator has an audio input (lane EDS): its ⊕ handle.
+        let takes_audio = |id: &enth_patch::ModuleId| {
+            patch
+                .generators
+                .iter()
+                .any(|g| g.id != *id && g.kind.params().iter().any(|p| p.flags.audio))
+        };
+        for card in &mut cards {
+            if let (CardKey::Module(id), Part::Generators) = (&card.key, part) {
+                card.audio_source = takes_audio(id);
             }
         }
         self.with_overlay(|o| overlay::apply(o, &mut cards));
@@ -524,6 +568,8 @@ impl Editor {
                 self.learn_layout = learn_layout(theme);
             }
             theme.clone_into(&mut self.resolved_for);
+            self.dense_theme = theme.dense();
+            self.dense_layout = dense_layout(theme);
         }
         let t = theme;
         self.live.refresh(&*session);
@@ -553,6 +599,15 @@ impl Editor {
         let column = create_split;
         #[cfg(all(feature = "duel", not(feature = "create")))]
         let column = duel_split;
+        // Layout 1 gives way to the dense layout for a patch of S2a's kinds, where the shell turned that on (lane EDS).
+        let base = if self.auto_dense
+            && self.layout.name() == super::layout::DEFAULT
+            && holds_s2a(session.patch())
+        {
+            &self.dense_layout
+        } else {
+            &self.layout
+        };
         let place = |layout: &Layout| {
             #[cfg(any(feature = "create", feature = "duel"))]
             if let Some(split) = column {
@@ -564,15 +619,15 @@ impl Editor {
         // places the `lesson` region; what no longer fits is in the overflow report.
         #[cfg(feature = "learn")]
         let (regions, layout) = {
-            let own = place(&self.layout);
+            let own = place(base);
             if self.learn.panel_open() && !own.iter().any(|p| p.region == Region::Lesson) {
                 (place(&self.learn_layout), &self.learn_layout)
             } else {
-                (own, &self.layout)
+                (own, base)
             }
         };
         #[cfg(not(feature = "learn"))]
-        let (regions, layout) = (place(&self.layout), &self.layout);
+        let (regions, layout) = (place(base), base);
         #[cfg(feature = "duel")]
         let duel_pane = duel_split.map(|split| create_pane(&regions, rect, split, t.space.gap));
         #[cfg(all(feature = "create", not(feature = "duel")))]
@@ -639,24 +694,38 @@ impl Editor {
                         };
                         let knobs: Vec<CardView> = layout
                             .parts_in(Region::Header)
-                            .flat_map(|part| self.cards(patch, part, drag))
+                            .flat_map(|part| self.cards(patch, part, drag, Density::Normal))
                             .collect();
                         Header::new(t, &header).knobs(&knobs).show(ui, r, &mut out);
                         mark_cards(&ctx, &knobs, &mut fingerprint);
                     }
                     Region::Macros => {
-                        Macros::new(t, &MacroView::all(patch)).show(ui, r, &mut out);
+                        let macro_theme = match layout.density() {
+                            Density::Normal => t,
+                            Density::Dense => &self.dense_theme,
+                        };
+                        Macros::new(macro_theme, &MacroView::all(patch)).show(ui, r, &mut out);
                     }
                     Region::Sources | Region::VoiceFx | Region::Modulators | Region::Effects => {
                         let cards: Vec<CardView> = layout
                             .parts_in(placed.region)
-                            .flat_map(|part| self.cards(patch, part, drag))
+                            .flat_map(|part| self.cards(patch, part, drag, layout.density()))
                             .collect();
                         let room = Room::of_parts(patch, layout.parts_in(placed.region));
-                        let shown =
-                            CardRegion::new(t, placed.region.name(), &cards, placed.arrange)
-                                .room(&room)
-                                .show(ui, r, &mut out);
+                        // A dense layout draws its cards with the dense sizes (lane EDS).
+                        let card_theme = match layout.density() {
+                            Density::Normal => t,
+                            Density::Dense => &self.dense_theme,
+                        };
+                        let shown = CardRegion::new(
+                            card_theme,
+                            placed.region.name(),
+                            &cards,
+                            placed.arrange,
+                        )
+                        .room(&room)
+                        .fit_rows(layout.density() == Density::Dense)
+                        .show(ui, r, &mut out);
                         overflow.push((placed.region.name(), shown.overflow));
                         mark_cards(&ctx, &cards, &mut fingerprint);
                     }
@@ -783,6 +852,7 @@ impl Editor {
             regions,
             overflow,
             repaint,
+            density: layout.density(),
         };
         let intents = out.take();
         self.apply(session, intents, pointer_down);
@@ -952,6 +1022,38 @@ fn create_pane(regions: &[Placed], rect: Rect, split: f32, gap: f32) -> Rect {
     let right = (rect.right() - gap).max(split);
     let bottom = (rect.bottom() - gap).max(top);
     Rect::from_min_max(egui::pos2(split, top), egui::pos2(right, bottom))
+}
+
+/// The built-in layout `dense` for `theme` (lane EDS), or layout 1 if it does not resolve (it always does: the unit test
+/// in `layout.rs` checks every built-in).
+fn dense_layout(theme: &Theme) -> Layout {
+    LayoutSpec::builtin("dense")
+        .and_then(|spec| Layout::new(spec, theme).ok())
+        .or_else(|| Layout::new(LayoutSpec::lanes(), theme).ok())
+        .unwrap_or_else(|| unreachable!("the built-in layouts check"))
+}
+
+/// Whether `patch` holds a module of one of S2a's kinds: a patch that can show more cards than layout 1 fits (the
+/// growl reference alone overflows three regions), so [`Editor::set_auto_dense`] draws it densely. A list rather than
+/// `ModuleSpec::hidden`: INT-S2a clears that flag per kind, and the cards stay as many.
+pub fn holds_s2a(patch: &enth_patch::Patch) -> bool {
+    use enth_patch::ModuleKind as K;
+    patch.modules().any(|(_, m)| {
+        matches!(
+            m.kind,
+            K::Dist
+                | K::Wt
+                | K::Ott
+                | K::Comb
+                | K::Formant
+                | K::Mseg
+                | K::Chorus
+                | K::Phaser
+                | K::Eq
+                | K::Delay
+                | K::Ladder
+        )
+    })
 }
 
 /// The built-in layout `learn` for `theme` (lane LUI), or layout 1 if it does not resolve (it always does: the

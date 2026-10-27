@@ -104,6 +104,16 @@ pub struct CardView {
     pub visible: Tier,
     /// "More" is open (editor view state the editor keeps, toggled by [`super::Intent::ShowMore`]).
     pub more_open: bool,
+    /// The card is a generator that another generator's audio input can take (the patch has one: a `wt`): it shows the
+    /// ⊕ handle that makes an audio route by drag (lane EDS). False for everything else, so a P1 patch's cards are
+    /// what they were.
+    pub audio_source: bool,
+    /// The card's audio inputs (`wt`'s `pm` and `am`) show whatever their tier, so a generator's handle can be dropped
+    /// on them (lane EDS; a dense layout sets it, layout 1 leaves it false).
+    pub audio_shown: bool,
+    /// The card is drawn by a dense layout (lane EDS): its cells are narrower, so its labels and values use the shorter
+    /// forms of [`present::DENSE_LABELS`] and [`present::DENSE_ITEMS`].
+    pub dense: bool,
     /// Where a module sits in its section, for the card's "…" menu (lane AM); `None` for the built-ins, which have
     /// no menu.
     pub place: Option<Place>,
@@ -146,6 +156,9 @@ impl CardView {
             params,
             visible: present::visible_tier(CardKind::Module(module.kind)),
             more_open: false,
+            audio_source: false,
+            audio_shown: false,
+            dense: false,
             place: Place::of(patch, &module.id),
             enable_score: None,
             hinted: false,
@@ -187,6 +200,9 @@ impl CardView {
             params,
             visible: VISIBLE_TIER,
             more_open: false,
+            audio_source: false,
+            audio_shown: false,
+            dense: false,
             place: None,
             enable_score: None,
             hinted: false,
@@ -207,18 +223,19 @@ impl CardView {
         self.params.iter().find(|p| p.spec.key == key)
     }
 
+    /// Whether `p` shows before "More": its tier is visible, or it is an audio input and [`audio_shown`](Self::audio_shown).
+    fn is_shown(&self, p: &ParamView) -> bool {
+        p.spec.learn.tier <= self.visible || (self.audio_shown && p.spec.flags.audio)
+    }
+
     /// The parameters shown before "More".
     pub fn shown(&self) -> impl Iterator<Item = &ParamView> {
-        self.params
-            .iter()
-            .filter(|p| p.spec.learn.tier <= self.visible)
+        self.params.iter().filter(|p| self.is_shown(p))
     }
 
     /// The parameters behind "More".
     pub fn hidden(&self) -> impl Iterator<Item = &ParamView> {
-        self.params
-            .iter()
-            .filter(|p| p.spec.learn.tier > self.visible)
+        self.params.iter().filter(|p| !self.is_shown(p))
     }
 
     /// A revealed hint points at one of its controls that "More" hides now: the card is outlined instead, so the

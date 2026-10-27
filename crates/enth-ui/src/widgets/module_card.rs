@@ -46,6 +46,8 @@ pub struct ModuleCard<'a> {
     switchable: bool,
     action: Option<&'a str>,
     menu: bool,
+    /// The id of a ⊕ handle left of the action: a generator's audio output, dragged onto an audio input (lane EDS).
+    source: Option<Id>,
     rows: usize,
 }
 
@@ -60,6 +62,8 @@ pub struct CardResponse {
     pub action: Option<Response>,
     /// The "…" menu button, if the card has one ([`ModuleCard::menu`]).
     pub menu: Option<Response>,
+    /// The ⊕ handle, if the card has one ([`ModuleCard::source_handle`]): drag it onto an audio input.
+    pub source: Option<Response>,
 }
 
 impl<'a> ModuleCard<'a> {
@@ -84,6 +88,7 @@ impl<'a> ModuleCard<'a> {
             switchable: true,
             action: None,
             menu: false,
+            source: None,
             rows: 1,
         }
     }
@@ -117,6 +122,15 @@ impl<'a> ModuleCard<'a> {
     #[must_use]
     pub fn menu(mut self, menu: bool) -> Self {
         self.menu = menu;
+        self
+    }
+
+    /// A ⊕ handle at the right end of the header row, left of the action (lane EDS): a generator's audio output, which
+    /// the editor drags onto an audio input to make an audio route. It interacts under `id` (from the module, never its
+    /// place), is named "<title> audio", is `size.tile.badge` square and is drawn at full strength, like the action.
+    #[must_use]
+    pub fn source_handle(mut self, id: Id) -> Self {
+        self.source = Some(id);
         self
     }
 
@@ -220,12 +234,14 @@ impl<'a> ModuleCard<'a> {
         params(&mut child);
         let action = self.action_button(ui, header_rect);
         let menu = self.menu_button(ui, header_rect);
+        let source = self.source_button(ui, header_rect);
         CardResponse {
             header,
             rect,
             toggled,
             action,
             menu,
+            source,
         }
     }
 
@@ -304,12 +320,14 @@ impl<'a> ModuleCard<'a> {
         );
         let action = self.action_button(ui, header_rect);
         let menu = self.menu_button(ui, header_rect);
+        let source = self.source_button(ui, header_rect);
         CardResponse {
             header,
             rect,
             toggled,
             action,
             menu,
+            source,
         }
     }
 
@@ -346,6 +364,56 @@ impl<'a> ModuleCard<'a> {
             Align2::CENTER_CENTER,
             crate::theme::glyph::MENU,
             t.text.title.clone(),
+            ink,
+        );
+        Some(response)
+    }
+
+    /// The width the ⊕ handle takes left of the action (0 without one).
+    fn source_width(&self) -> f32 {
+        if self.source.is_some() {
+            self.theme.size.tile.badge + self.theme.space.tight
+        } else {
+            0.0
+        }
+    }
+
+    /// The width of the header action: its text and a tight gap each side (0 without one).
+    fn action_width(&self, ui: &Ui, header: Rect) -> f32 {
+        self.action.map_or(0.0, |text| {
+            let t = self.theme;
+            let w = paint::one_line(ui, text, &t.text.label, t.color.text.label, header.width())
+                .size()
+                .x;
+            w + 2.0 * t.space.tight
+        })
+    }
+
+    /// The ⊕ handle (lane EDS): drawn like a source tile's, left of the action.
+    fn source_button(&self, ui: &mut Ui, header: Rect) -> Option<Response> {
+        let id = self.source?;
+        let t = self.theme;
+        let side = t.size.tile.badge;
+        let right =
+            header.right() - self.menu_width() - self.action_width(ui, header) - t.space.tight;
+        let rect = Rect::from_center_size(
+            pos2(right - side / 2.0, header.center().y),
+            vec2(side, side),
+        );
+        let response = ui.interact(rect, id, Sense::drag());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(Role::Button, true, format!("{} audio", self.title))
+        });
+        let ink = if response.hovered() || response.dragged() {
+            t.color.text.primary
+        } else {
+            t.color.accent.modulation
+        };
+        ui.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            crate::theme::glyph::HANDLE,
+            t.text.body.clone(),
             ink,
         );
         Some(response)
@@ -440,16 +508,16 @@ impl<'a> ModuleCard<'a> {
         let t = self.theme;
         let c = &t.color;
         let painter = content.painter();
-        // Leave the action's and the menu button's places free.
+        // Leave the action's, the menu button's and the ⊕ handle's places free.
         let end = header.right() - self.menu_width();
         let right = match self.action {
             Some(text) => {
                 let w = paint::one_line(content, text, &t.text.label, c.text.label, header.width())
                     .size()
                     .x;
-                end - w - 2.0 * t.space.tight - t.space.gap
+                end - w - 2.0 * t.space.tight - self.source_width() - t.space.gap
             }
-            None if self.menu => end - t.space.gap,
+            None if self.menu || self.source.is_some() => end - self.source_width() - t.space.gap,
             None => end,
         };
         let header = Rect::from_min_max(header.min, pos2(right.max(header.left()), header.max.y));

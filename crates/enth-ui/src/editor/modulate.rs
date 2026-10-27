@@ -22,7 +22,8 @@
 use egui::{CursorIcon, Id, LayerId, Order, Pos2, Rect, Response, Sense, Ui, Vec2, WidgetInfo};
 use enth_params::{DEPTH, ParamSpec};
 use enth_patch::model::MAX_ROUTES;
-use enth_patch::{ModSource, ParamAddr, Patch, Rate, RouteAddr, Target};
+use enth_patch::validate::{self, closes_audio_cycle};
+use enth_patch::{ModSource, ParamAddr, Patch, Rate, Route, RouteAddr, Target};
 
 use super::cards::format::signed_percent;
 use super::cards::view::source_name;
@@ -34,7 +35,28 @@ use crate::widgets::Knob;
 /// handle then sets it (`enth_patch::modulation::DEFAULT_ROUTE_DEPTH`).
 pub use enth_patch::modulation::DEFAULT_ROUTE_DEPTH as NEW_ROUTE_DEPTH;
 
-/// The payload of a source's ⊕ handle while it is dragged.
+/// The depth an **audio route** made by a drop starts at, in percent of the source's output (lane EDS): the full
+/// output, so the carrier's own amount control (`wt`'s `pm_index`, the AM gain `am`) sets how much, as in every S2a
+/// template (`content/templates/s2a`). Not [`NEW_ROUTE_DEPTH`]: that is a share of a *parameter's range*, which an
+/// audio input does not have.
+pub const AUDIO_ROUTE_DEPTH: f32 = 100.0;
+
+/// The depth the route `src → dst` starts at when a drop makes it: [`AUDIO_ROUTE_DEPTH`] for an audio route (a
+/// generator into an audio input), else [`NEW_ROUTE_DEPTH`].
+pub fn new_route_depth(patch: &Patch, route: &RouteAddr) -> f32 {
+    let audio = Route {
+        src: route.src.clone(),
+        dst: route.dst.clone(),
+        depth: AUDIO_ROUTE_DEPTH,
+    };
+    if validate::is_audio_route(patch, &audio) {
+        AUDIO_ROUTE_DEPTH
+    } else {
+        NEW_ROUTE_DEPTH
+    }
+}
+
+/// The payload of a source's ⊕ handle while it is dragged: a modulator's, or (lane EDS) a generator's audio output.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceDrag {
     pub src: ModSource,
@@ -72,8 +94,12 @@ pub fn check(patch: &Patch, src: &ModSource, addr: &ParamAddr, spec: &ParamSpec)
     {
         return DropCheck::Routed(r.depth);
     }
+    if validate::is_generator_source(patch, src) {
+        return check_audio(patch, src, addr, spec, &source);
+    }
     if spec.flags.audio {
-        // An audio input takes a generator's output through an audio route (S2a); making one by drag is lane EDS's.
+        // An audio input takes a generator's output through an audio route (S2a): a modulation source is refused
+        // (a generator's ⊕ handle makes the route, lane EDS).
         return DropCheck::Refused(format!(
             "{} takes the audio of a generator, not a modulation source",
             spec.name
@@ -88,6 +114,49 @@ pub fn check(patch: &Patch, src: &ModSource, addr: &ParamAddr, spec: &ParamSpec)
         return DropCheck::Refused(format!(
             "{source} runs per voice and {} is global: only a global LFO, a macro or the mod wheel can modulate it",
             target_title(patch, addr)
+        ));
+    }
+    if patch.routes.len() >= MAX_ROUTES {
+        return DropCheck::Refused(format!(
+            "A patch holds at most {MAX_ROUTES} routes; remove one first"
+        ));
+    }
+    DropCheck::Route
+}
+
+/// What dropping the generator `src` on `addr` would do (lane EDS): a generator's audio goes only to an audio input of
+/// a generator (`wt`'s `pm` and `am`), and never in a loop (the patch's own rules, `enth_patch::validate`).
+fn check_audio(
+    patch: &Patch,
+    src: &ModSource,
+    addr: &ParamAddr,
+    spec: &ParamSpec,
+    source: &str,
+) -> DropCheck {
+    if !spec.flags.audio || !validate::is_generator_dest(patch, addr) {
+        return DropCheck::Refused(format!(
+            "{source} is a generator: its audio can drive only an audio input (a wavetable's PM or AM), not {}",
+            spec.name
+        ));
+    }
+    let route = Route {
+        src: src.clone(),
+        dst: addr.clone(),
+        depth: AUDIO_ROUTE_DEPTH,
+    };
+    let target = target_title(patch, addr);
+    if closes_audio_cycle(patch, &route) {
+        let itself =
+            matches!(addr.target(), Target::Module(id) if *src == ModSource::Module(id.clone()));
+        return DropCheck::Refused(if itself {
+            format!("{source} cannot drive itself: a loop inside {target} is its Feedback control")
+        } else {
+            format!("{target} already drives {source}: audio flows one way, never in a loop")
+        });
+    }
+    if validate::audio_into_sync_master(patch, &route) {
+        return DropCheck::Refused(format!(
+            "{source} comes after the hard-sync master, which has to run first: it cannot feed it"
         ));
     }
     if patch.routes.len() >= MAX_ROUTES {
@@ -143,6 +212,11 @@ pub(crate) fn target(
     if let Some(drag) = &over {
         let name = &drag.name;
         let modulation = match check {
+            // An audio input (lane EDS): the generator's audio goes in at the audio depth, not a share of a range.
+            DropCheck::Route if p.spec.flags.audio => format!(
+                "Drop to feed it the audio of {name} at {}",
+                signed_percent(AUDIO_ROUTE_DEPTH)
+            ),
             DropCheck::Route => format!(
                 "Drop to modulate it from {name} by {}",
                 signed_percent(NEW_ROUTE_DEPTH)

@@ -78,7 +78,9 @@ pub enum Intent {
     /// Remove a route (a double-click on a matrix cell, the control menu's "Remove … modulation").
     Unroute(RouteAddr),
     /// A source's ⊕ was dropped on a control (drag-to-modulate, lane ED2): insert the route at
-    /// [`NEW_ROUTE_DEPTH`](crate::editor::modulate::NEW_ROUTE_DEPTH) unless it exists. One edit, no gesture.
+    /// [`NEW_ROUTE_DEPTH`](crate::editor::modulate::NEW_ROUTE_DEPTH) unless it exists; a generator's ⊕ dropped on an
+    /// audio input (lane EDS) inserts an audio route at
+    /// [`AUDIO_ROUTE_DEPTH`](crate::editor::modulate::AUDIO_ROUTE_DEPTH). One edit, no gesture.
     Route(RouteAddr),
     /// Expose a parameter to the host through an automation slot (the right-click "Automate" item): the slot that
     /// already drives it, else the lowest free one (`bridge::free_slot`, F1b decision 4). One edit, no gesture.
@@ -206,7 +208,7 @@ impl Intent {
                         route: Route {
                             src: route.src.clone(),
                             dst: route.dst.clone(),
-                            depth: crate::editor::modulate::NEW_ROUTE_DEPTH,
+                            depth: crate::editor::modulate::new_route_depth(patch, route),
                         },
                     }]
                 }

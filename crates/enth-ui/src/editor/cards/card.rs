@@ -5,8 +5,8 @@
 //! another layout, another position in its section) keeps its drags and hovers.
 
 use egui::{Rect, Response, Ui, UiBuilder};
-use enth_patch::ModuleKind;
 use enth_patch::catalogue::{FilterMode, LfoShape, NoiseColor, Warp, Wave, Wavetable, WtTable};
+use enth_patch::{ModSource, ModuleKind, Section};
 
 use super::format::{signed_percent, value_text};
 use super::intent::{Grip, Hovered, Intent, Intents};
@@ -14,6 +14,7 @@ use super::present::{self, Control};
 use super::view::{CardKey, CardKind, CardView, ParamView};
 use super::{envelope, ids, menu, shapes};
 use crate::Theme;
+use crate::editor::modulate::SourceDrag;
 use crate::editor::overlay::Emphasis;
 use crate::editor::{add_module, modulate};
 use crate::widgets::{
@@ -38,6 +39,8 @@ pub struct Card<'a> {
     shape: CardShape,
     /// The card sits in a band, left to right (its menu's moves read "left" and "right").
     along_x: bool,
+    /// A strip wraps its knob cells by the width it is given (a dense layout, lane EDS), not at [`STRIP_ROW_CELLS`].
+    fit_rows: bool,
 }
 
 impl<'a> Card<'a> {
@@ -48,7 +51,17 @@ impl<'a> Card<'a> {
             view,
             shape: CardShape::Stacked,
             along_x: false,
+            fit_rows: false,
         }
+    }
+
+    /// A strip wraps its knob cells by the width it is given instead of at [`STRIP_ROW_CELLS`] (lane EDS: the dense
+    /// layout, whose strips are narrower than layout 1's and whose cells are smaller). Default off: layout 1's strips
+    /// wrap at the constant, so a card never moves with the window's width.
+    #[must_use]
+    pub fn fit_rows(mut self, fit: bool) -> Self {
+        self.fit_rows = fit;
+        self
     }
 
     /// The card sits in a band, left to right: its menu's moves read "Move left" and "Move right" (lane AM).
@@ -92,8 +105,18 @@ impl<'a> Card<'a> {
             if let Some(more) = more {
                 card = card.action(more);
             }
+            // A generator's audio output is a drag source (lane EDS): its ⊕ handle makes an audio route.
+            let source = generator_source(view);
+            if let Some(src) = &source {
+                card = card.source_handle(ids::source(src));
+            }
+            let row_cells = if self.fit_rows {
+                strip_row_cells(t, ui.available_width())
+            } else {
+                STRIP_ROW_CELLS
+            };
             card = match self.shape {
-                CardShape::Strip => card.rows(strip_rows(view)),
+                CardShape::Strip => card.rows(strip_rows(view, row_cells)),
                 CardShape::Stacked => card.stacked(display_height(t, view)),
             };
             let mut display_out = Intents::default();
@@ -102,10 +125,13 @@ impl<'a> Card<'a> {
             let response = card.show(
                 ui,
                 |ui, rect| display(ui, t, view, rect, &mut display_out),
-                |ui| params(ui, t, view, shape, &mut params_out),
+                |ui| params(ui, t, view, shape, row_cells, &mut params_out),
             );
             out.extend(display_out);
             out.extend(params_out);
+            if let (Some(src), Some(handle)) = (&source, &response.source) {
+                source_handle(ui, t, view, src, handle, out);
+            }
             // A Recreate round's ring on the enable toggle (lane RUI): the toggle sits at the header row's left end.
             if let Some(score) = view.enable_score
                 && view.enabled.is_some()
@@ -178,12 +204,75 @@ impl<'a> Card<'a> {
     }
 }
 
-/// The display's height in a stacked card: none for the built-ins, which have nothing to picture.
+/// The source a card's ⊕ handle drags: a generator's audio output (lane EDS), as `ModSource::Module`.
+fn generator_source(view: &CardView) -> Option<ModSource> {
+    match (&view.key, view.kind) {
+        (CardKey::Module(id), CardKind::Module(kind))
+            if view.audio_source && kind.section() == Section::Generators =>
+        {
+            Some(ModSource::Module(id.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// A generator's ⊕ handle (lane EDS): dragging it sets the [`SourceDrag`] payload every audio input checks itself
+/// against (`modulate::check`), draws the orange wire to the pointer, and says on the status line what it is.
+fn source_handle(
+    ui: &mut Ui,
+    t: &Theme,
+    view: &CardView,
+    src: &ModSource,
+    handle: &Response,
+    out: &mut Intents,
+) {
+    handle.dnd_set_drag_payload(SourceDrag {
+        src: src.clone(),
+        name: view.title.clone(),
+    });
+    if handle.dragged() {
+        modulate::wire(ui, t, handle.rect.center(), ids::source(src));
+    }
+    // While the handle is dragged over a control, the control's reading wins (it is drawn earlier, and a dragged
+    // widget also counts as hovered).
+    let over_target = handle.dragged() && out.hovered.is_some();
+    if (handle.hovered() || handle.dragged()) && !over_target {
+        out.hovered = Some(Hovered {
+            path: format!("{} {} audio", view.title, crate::theme::glyph::PATH),
+            value: "audio output".to_owned(),
+            modulation: format!(
+                "drag {} onto a PM or AM input to modulate it with this audio",
+                crate::theme::glyph::HANDLE
+            ),
+        });
+    }
+}
+
+/// The display's height in a stacked card: none for the built-ins, which have nothing to picture, and none for a
+/// kind that draws no picture yet ([`has_picture`], lane EDS).
 fn display_height(t: &Theme, view: &CardView) -> f32 {
     match view.kind {
-        CardKind::Module(_) => t.size.card.lane_display_height,
-        CardKind::Voice | CardKind::Master => 0.0,
+        CardKind::Module(kind) if has_picture(kind) => t.size.card.lane_display_height,
+        CardKind::Module(_) | CardKind::Voice | CardKind::Master => 0.0,
     }
+}
+
+/// Whether [`display`] draws a picture for `kind`. S2a's other reserved kinds draw none yet, and a card of one has no
+/// display slot (lane EDS: layout 1 reserved an empty 40 px for them).
+fn has_picture(kind: ModuleKind) -> bool {
+    !matches!(
+        kind,
+        ModuleKind::Dist
+            | ModuleKind::Ott
+            | ModuleKind::Comb
+            | ModuleKind::Formant
+            | ModuleKind::Mseg
+            | ModuleKind::Chorus
+            | ModuleKind::Phaser
+            | ModuleKind::Eq
+            | ModuleKind::Delay
+            | ModuleKind::Ladder
+    )
 }
 
 /// The card's display: a picture of the module's sound or shape from its real values; the envelope's is editable.
@@ -283,7 +372,14 @@ pub(crate) enum Form {
 /// The controls: the shown tiers, then (with "More" open) a thin rule and the rest. A strip puts each group in one
 /// row of cells. A lane card puts a group's enums first, one row each, then its cells in rows spread across the
 /// card's width.
-fn params(ui: &mut Ui, t: &Theme, view: &CardView, shape: CardShape, out: &mut Intents) {
+fn params(
+    ui: &mut Ui,
+    t: &Theme,
+    view: &CardView,
+    shape: CardShape,
+    row_cells: usize,
+    out: &mut Intents,
+) {
     let shown: Vec<&ParamView> = view.shown().collect();
     let hidden: Vec<&ParamView> = if view.more_open {
         view.hidden().collect()
@@ -302,7 +398,7 @@ fn params(ui: &mut Ui, t: &Theme, view: &CardView, shape: CardShape, out: &mut I
             match shape {
                 CardShape::Strip => {
                     // One row per group, or more when it holds more cells than a row does (lane SKS).
-                    for row in group.chunks(STRIP_ROW_CELLS) {
+                    for row in group.chunks(row_cells) {
                         ui.horizontal_top(|ui| {
                             for p in row {
                                 control(ui, t, view, p, Form::Cell, out);
@@ -321,10 +417,17 @@ fn params(ui: &mut Ui, t: &Theme, view: &CardView, shape: CardShape, out: &mut I
 /// whose groups hold no more than this lays out as it always did, whatever the width it is given.
 const STRIP_ROW_CELLS: usize = 8;
 
+/// The knob cells one row of a strip holds when it wraps by the width it is given (`fit_rows`, lane EDS): the strip's
+/// width less its stripe, its padding, the display and the gap after it, over a cell and the gap between cells.
+fn strip_row_cells(t: &Theme, width: f32) -> usize {
+    let room = width - t.stroke.thick - 2.0 * t.space.gap - t.size.card.display_width - t.space.pad;
+    (((room + t.space.tight) / (t.size.knob.cell_width + t.space.tight)).floor() as usize).max(1)
+}
+
 /// The rows of knob cells a strip needs: each of the shown and the opened groups takes one row, or more when its cells
-/// do not fit one.
-fn strip_rows(view: &CardView) -> usize {
-    let rows = |n: usize| n.div_ceil(STRIP_ROW_CELLS);
+/// do not fit one (`row_cells` to a row).
+fn strip_rows(view: &CardView, row_cells: usize) -> usize {
+    let rows = |n: usize| n.div_ceil(row_cells);
     let hidden = if view.more_open {
         view.hidden().count()
     } else {
@@ -392,7 +495,7 @@ pub(crate) fn control(
     }
     let label = match form {
         Form::Inline(_) if view.params.len() == 1 => view.title.as_str(),
-        _ => present::label(view.kind, p.spec),
+        _ => present::label_in(view.kind, p.spec, view.dense),
     };
     let dimmed = p.emphasis == Emphasis::Dimmed;
     // While a source's ⊕ is dragged, a control it cannot modulate draws dimmed (lane ED2, `editor::modulate`).
@@ -468,7 +571,7 @@ fn control_body(
             let items = p.spec.enum_items().unwrap_or(&[]);
             let labels: Vec<&str> = items
                 .iter()
-                .map(|i| present::item_label(view.kind, p.spec, i))
+                .map(|i| present::item_label_in(view.kind, p.spec, i, view.dense))
                 .collect();
             let mut selected = p.value as usize;
             let mut segmented = Segmented::new(t, "segmented", &mut selected, &labels)
@@ -529,7 +632,7 @@ fn knob(
     let mut norm = p.norm();
     let text = match spec.enum_item(p.value) {
         Some(item) if spec.enum_items().is_some() => {
-            present::item_label(view.kind, spec, item).to_owned()
+            present::item_label_in(view.kind, spec, item, view.dense).to_owned()
         }
         _ => value_text(spec, p.value),
     };
