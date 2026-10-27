@@ -116,5 +116,9 @@ harness = false
 name = "ladder"  # S2a lane FLT
 harness = false
 
+[[bench]]
+name = "g2"  # S2a lane G2B: the G2 reference patch (a dubstep growl voice), 8 voices, and its swap blocks
+harness = false
+
 [lints]
 workspace = true

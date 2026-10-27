@@ -3,7 +3,7 @@
 //! Every patch case in `cases/` (the harness's own sine aside) renders through `enth_render` as `cargo xtask golden`
 //! does, and with the engine's stereo flag forced on.
 //!
-//! - **A case without a stereo generator** (every case but `wt-unison-*`) runs the mono path under `Auto` (the flag is
+//! - **A case without a stereo generator** (every case but `wt-unison-*` and lane G2B's `g2-*`) runs the mono path under `Auto` (the flag is
 //!   clear), and **both channels of the forced render must equal it bit for bit**: stereo with zero spread is mono.
 //!   The hashes in `expected/` are the mono path's, so this also ties the stereo path to them on all six targets,
 //!   without a second set of files.
@@ -22,6 +22,11 @@ use enth_render::{
 
 fn bits(x: &[f32]) -> Vec<u32> {
     x.iter().map(|v| v.to_bits()).collect()
+}
+
+/// The cases that hold a unison `wt`: lane UNI's `wt-unison-*` and the G2 reference patch (lane G2B, `g2-*`).
+fn has_unison_wt(name: &str) -> bool {
+    name.starts_with("wt-unison-") || name.starts_with("g2-")
 }
 
 #[test]
@@ -84,7 +89,7 @@ fn every_golden_patch_runs_mono_or_the_unison_stereo_path_and_forcing_the_flag_c
         assert_eq!(auto.frames(), case.frames(), "{name}");
         assert_eq!(
             auto.stats.stereo,
-            name.starts_with("wt-unison-"),
+            has_unison_wt(&name),
             "{name}: the flag comes from the patch (a unison wt) and from nothing else"
         );
         if auto.stats.stereo {
@@ -96,7 +101,8 @@ fn every_golden_patch_runs_mono_or_the_unison_stereo_path_and_forcing_the_flag_c
             let off = render_with_stereo(&patch, &perf, &spec, DEFAULT_BLOCK, StereoMode::Off)
                 .unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(!off.stats.stereo, "{name}: Off runs the mono path");
-            if patch.voice.values[VoiceParam::Pan.index()] == 0.0 {
+            // (A stereo effect in `fx`, the chorus of lane G2B's `g2-growl`, makes two channels from one by itself.)
+            if patch.voice.values[VoiceParam::Pan.index()] == 0.0 && patch.fx.is_empty() {
                 assert_eq!(bits(&off.left), bits(&off.right), "{name}: mono reference");
             }
             if name == "wt-unison-reese" {
@@ -117,5 +123,5 @@ fn every_golden_patch_runs_mono_or_the_unison_stereo_path_and_forcing_the_flag_c
     }
     assert!(cases >= 73, "{cases} case files");
     assert!(patches >= 70, "{patches} patch cases");
-    assert_eq!(flagged, 7, "the wt-unison-* cases");
+    assert_eq!(flagged, 8, "the seven wt-unison-* cases and g2-growl");
 }
