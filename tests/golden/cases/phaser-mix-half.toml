@@ -1,0 +1,20 @@
+description = "S2a MOD: the phaser at mix 50 %, 2 Hz, depth 90 %, 4 stages, centre 500 Hz, feedback 20 %, width 0 % (both channels in step), on a three-note saw chord. Guards the mix algebra and the mono sweep."
+sample_rate = 48000
+seconds = 1.5
+
+[source]
+kind = "patch"
+notes = [
+    { key = 45, velocity = 1.0, on_s = 0.0, off_s = 1.3 },
+    { key = 57, velocity = 1.0, on_s = 0.0171, off_s = 1.3 },
+    { key = 64, velocity = 1.0, on_s = 0.3, off_s = 1.4 },
+]
+
+[source.patch]
+schema = 1
+engine = "0.1.0"
+voice = { amp_env = "env1", polyphony = 8 }
+master = { level = -6 }
+generators = [{ id = "osc1", kind = "osc", params = { wave = "saw", phase_mode = "reset" } }]
+modulators = [{ id = "env1", kind = "adsr", params = { attack = 0, decay = 0, sustain = 100, release = 0 } }]
+fx = [{ id = "phaser1", kind = "phaser", params = { stages = 4, rate = 2, depth = 90, center = 500, feedback = 20, width = 0, mix = 50 } }]

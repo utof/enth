@@ -21,8 +21,8 @@
 //!   and a fast one at a fixed ratio, the slow one at `rate`), each sweeping by `depth`.
 //! - **The effect's own output is the dry signal plus the delayed taps, level-matched**: with `wet` the mean of the
 //!   taps (each channel's taps weighted to unity gain together) the output at `mix` 100 % is `(x + wet) / 2`, so where
-//!   the dry and the wet are in phase the sum is 0 dB and not +6 dB, and a freshly added chorus changes a full-scale
-//!   saw's level by at most about 3 dB; `mix` blends the input (0 %, bit for bit) with that sum (100 %). `feedback`
+//!   the dry and the wet are in phase the sum is 0 dB and not +6 dB, and a freshly added chorus is never louder than its
+//!   input and at most about 5 dB quieter on a full-scale saw; `mix` blends the input (0 %, bit for bit) with that sum (100 %). `feedback`
 //!   returns the taps into the delay (the flanger's resonance) with **the delay's input scaled by `1 − |feedback|`**,
 //!   `v[n] = (1 − |feedback|) · x[n] + feedback · tap[n]`, so the loop's gain peaks at 0 dB at every `feedback` (the
 //!   bare loop peaks at `1 / (1 − |feedback|)`, +40 dB at ±99 %). Lane MOD measures the level and may choose another

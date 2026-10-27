@@ -18,7 +18,7 @@
 //! chain, and its input is scaled by `1 − |feedback|`), and the output at `mix` 100 % is `(x + wet) / 2`. So the level is
 //! bounded: the chain's gain peaks at 0 dB at every `feedback` (the bare `x + feedback · wet` loop peaks at
 //! `1 / (1 − |feedback|)`, +40 dB at 99 %), and where the dry and the wet are in phase the sum is 0 dB and not +6 dB.
-//! A freshly added phaser changes a full-scale saw's level by at most about 3 dB. `mix` blends the input (0 %, bit for
+//! A freshly added phaser is never louder than its input and at most about 5 dB quieter on a full-scale saw. `mix` blends the input (0 %, bit for
 //! bit) with that sum (100 %). A global effect: only global sources modulate it. Lane MOD measures the level and may
 //! choose another normalisation that keeps the same bound.
 //!

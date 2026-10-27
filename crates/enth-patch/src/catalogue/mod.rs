@@ -67,8 +67,9 @@
 //!      scaling the loop's input by `1 − |feedback|` (`comb`, `phaser` and `chorus` do): a bare `x + feedback · loop`
 //!      peaks at `1 / (1 − |feedback|)`, +6 dB at 50 % and +40 dB at 99 %.
 //!    - **Where 100 % sums the dry signal with the wet path, the sum is level-matched**, for example `(x + wet) / 2`
-//!      (`phaser`, `chorus`), so a freshly added effect at its defaults changes a full-scale saw's level by at most
-//!      about 3 dB. Lanes FLT and MOD measure it.
+//!      (`phaser`, `chorus`), so a freshly added effect at its defaults is never louder than its input and at most
+//!      about 5 dB quieter on a full-scale saw (lane MOD measured chorus −3.2, ensemble −4.8, phaser −4.7 dB; the
+//!      coordinator relaxed "about 3 dB" to this on 2026-10-27).
 //!    - **`delay` is the one documented exception**: its repeats are separate events in time that fall away with
 //!      `feedback`, its dry signal passes unchanged and a soft clip bounds 100 % (the table's own text); it is not a
 //!      resonance, so nothing is normalised.

@@ -80,6 +80,11 @@ param_index!(
     OttParam,
 );
 
+// S2a lane MOD: its own invocation and import, so the lanes' edits to the list above do not touch the same lines.
+use enth_patch::catalogue::{ChorusParam, PhaserParam};
+
+param_index!(ChorusParam, PhaserParam);
+
 /// One module's parameters in the per-voice table. Cheap to copy.
 #[derive(Clone, Copy, Debug)]
 pub struct VoiceParams<'a> {
