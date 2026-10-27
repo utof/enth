@@ -167,10 +167,10 @@ mod tests {
     #[test]
     fn the_sketches_load_and_play_and_the_metallic_variant_exceeds_the_voice_fx_cap() {
         let all = sketches();
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 14);
         let mut played = 0;
         for (name, text) in &all {
-            if name.starts_with("s04m") {
+            if name.starts_with("s04m-") {
                 let err = match file::load(text) {
                     Err(e) => format!("{e:?}"),
                     Ok(l) => match validate(&l.patch) {
@@ -199,7 +199,7 @@ mod tests {
             plays(&loaded.patch, hold, dur);
             played += 1;
         }
-        assert_eq!(played, 12);
+        assert_eq!(played, 13);
     }
 
     /// Each template leaves the search a space of a size it can use: the continuous and categorical axes the job
@@ -218,6 +218,14 @@ mod tests {
         for t in s2a_templates() {
             let free = free_set(&t.patch, &perf).unwrap();
             let (c, k) = (free.continuous().len(), free.categorical().len());
+            println!("{}: {c} continuous and {k} categorical axes", t.name);
+            let mut by: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
+            for a in free.addrs() {
+                *by.entry(a.to_string().split('.').next().unwrap_or("").to_owned())
+                    .or_default() += 1;
+            }
+            println!("  by module: {by:?}");
             assert!(
                 (10..=160).contains(&(c + k)),
                 "{}: {c} continuous and {k} categorical axes",
