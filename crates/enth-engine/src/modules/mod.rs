@@ -399,6 +399,9 @@ impl VoiceProcessorImpl {
             (VoiceProcessorImpl::Ladder(l), VoiceProcessorImpl::Ladder(r)) => {
                 VoiceProcessor::process_pair(l, r, left, right);
             }
+            (VoiceProcessorImpl::Formant(l), VoiceProcessorImpl::Formant(r)) => {
+                VoiceProcessor::process_pair(l, r, left, right);
+            }
             (l, r) => {
                 l.process(left);
                 r.process(right);
