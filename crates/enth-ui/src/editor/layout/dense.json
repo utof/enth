@@ -1,0 +1,33 @@
+{
+  "schema": "enth.layout/1",
+  "name": "dense",
+  "description": "Layout 1's regions with dense cards, for S2a patches: the generators as strips, the modulators as a band, the voice effects and the effects as two lanes the whole body tall",
+  "density": "dense",
+  "margin": {"token": "space.gap"},
+  "gap": {"token": "space.gap"},
+  "root": {"rows": [
+    {"size": {"token": "size.bar.header"}, "cols": [
+      {"size": {"share": 1}, "region": "header"},
+      {"size": {"token": "size.output.width"}, "region": "output"}
+    ]},
+    {"size": {"token": "size.dense.macro_height"}, "region": "macros"},
+    {"size": {"share": 1}, "cols": [
+      {"size": {"share": 1}, "rows": [
+        {"size": {"token": "size.dense.strip_height", "count": 3}, "region": "sources", "arrange": "strips"},
+        {"size": {"token": "size.dense.band_height"}, "region": "modulators", "arrange": "band"},
+        {"size": {"share": 1}, "region": "overview"}
+      ]},
+      {"size": {"token": "size.card.lane_width"}, "region": "voice_fx", "arrange": "lane"},
+      {"size": {"token": "size.card.lane_width"}, "region": "effects", "arrange": "lane"}
+    ]},
+    {"size": {"token": "size.bar.status"}, "region": "status"}
+  ]},
+  "place": [
+    {"part": "generators", "region": "sources"},
+    {"part": "voice_fx", "region": "voice_fx"},
+    {"part": "voice", "region": "voice_fx"},
+    {"part": "fx", "region": "effects"},
+    {"part": "modulators", "region": "modulators"},
+    {"part": "master", "region": "header"}
+  ]
+}

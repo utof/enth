@@ -34,6 +34,8 @@ pub struct CardRegion<'a> {
     arrangement: Arrangement,
     /// The sections modules can be added to here (lane AM); none: no add menu, no slot.
     room: Option<&'a Room>,
+    /// Strips wrap their knob cells by their width, not at the constant (a dense layout, lane EDS).
+    fit_rows: bool,
 }
 
 impl<'a> CardRegion<'a> {
@@ -50,7 +52,15 @@ impl<'a> CardRegion<'a> {
             cards,
             arrangement,
             room: None,
+            fit_rows: false,
         }
+    }
+
+    /// Strips wrap their knob cells by the width they are given (a dense layout, lane EDS), not at layout 1's constant.
+    #[must_use]
+    pub fn fit_rows(mut self, fit: bool) -> Self {
+        self.fit_rows = fit;
+        self
     }
 
     /// The sections this region shows and how full they are (lane AM): a right-click on empty space opens their Add
@@ -105,8 +115,9 @@ impl<'a> CardRegion<'a> {
                 let mut draw = |ui: &mut Ui| {
                     let start = ui.cursor().min;
                     for view in self.cards {
-                        let card =
-                            Card::new(t, view).along_x(self.arrangement == Arrangement::Band);
+                        let card = Card::new(t, view)
+                            .along_x(self.arrangement == Arrangement::Band)
+                            .fit_rows(self.fit_rows);
                         let card = match self.arrangement {
                             Arrangement::Strips => card.strip(),
                             Arrangement::Lane | Arrangement::Band => card.stacked(),

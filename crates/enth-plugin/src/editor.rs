@@ -152,6 +152,8 @@ impl Glue {
         env: Option<Result<LayoutSpec, String>>,
         saved: &str,
     ) {
+        // With layout 1 in force and no `ENTH_LAYOUT`, a patch of S2a's kinds is drawn in the dense layout (lane EDS).
+        let auto_dense = env.is_none();
         let saved = LayoutSpec::builtin(saved).unwrap_or_else(LayoutSpec::lanes);
         let (spec, mut notice) = match env {
             Some(Ok(spec)) => (spec, String::new()),
@@ -164,6 +166,7 @@ impl Glue {
             let _ = self.editor.set_layout(LayoutSpec::lanes(), theme);
         }
         self.editor.set_notice(notice);
+        self.editor.set_auto_dense(auto_dense);
     }
 
     /// The editor, for tests.
@@ -676,6 +679,38 @@ mod tests {
             "lanes",
         );
         assert_eq!(glue.editor().layout().name(), "lanes");
+    }
+
+    #[test]
+    fn a_patch_of_s2a_kinds_is_drawn_densely_unless_a_layout_was_asked_for() {
+        // The growl reference (lane EDS): layout 1 scrolls three regions at 1200 x 800, the dense layout none.
+        let growl = enth_patch::file::load(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tools/test-host/golden/enth-plugin.g2.patch.json"
+        )))
+        .expect("the golden loads")
+        .patch;
+        let theme = Theme::dark();
+        let ctx = egui::Context::default();
+        theme.apply(&ctx);
+        let run = |env: Option<Result<LayoutSpec, String>>, saved: &str, patch: &Patch| {
+            let mut glue = Glue::new(&theme);
+            let mut session = Session::new(patch.clone());
+            glue.choose_layout(&theme, env, saved);
+            frame(&ctx, &mut glue, &mut session, Vec::new());
+            let report = glue.editor().report().clone();
+            (report.density, report.overflow)
+        };
+        let (density, overflow) = run(None, "lanes", &growl);
+        assert_eq!(density, enth_ui::editor::layout::Density::Dense);
+        assert!(overflow.is_empty(), "{overflow:?}");
+        // ENTH_LAYOUT naming layout 1 is a layout asked for: the author sees what layout 1 does with it.
+        let (density, overflow) = run(Some(Ok(LayoutSpec::lanes())), "lanes", &growl);
+        assert_eq!(density, enth_ui::editor::layout::Density::Normal);
+        assert_ne!(overflow.len(), 0, "layout 1 scrolls the growl reference");
+        // The P1 patch is layout 1 either way.
+        let (density, _) = run(None, "lanes", &Patch::init());
+        assert_eq!(density, enth_ui::editor::layout::Density::Normal);
     }
 
     /// A fresh folder under the system's temporary folder, removed when dropped.

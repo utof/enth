@@ -26,13 +26,18 @@ pub const LAYOUT_SCHEMA: &str = "enth.layout/1";
 
 /// The built-in layouts, by name, as JSON. Layout 1, "lanes", comes first and is the default.
 #[cfg(not(feature = "learn"))]
-pub const BUILTIN: &[(&str, &str)] = &[("lanes", include_str!("layout/lanes.json"))];
+pub const BUILTIN: &[(&str, &str)] = &[
+    ("lanes", include_str!("layout/lanes.json")),
+    ("dense", include_str!("layout/dense.json")),
+];
 
-/// The built-in layouts, by name, as JSON. Layout 1, "lanes", comes first and is the default. With the `learn`
-/// feature, `learn` (lane LUI) places the `lesson` region: the editor draws it while the lesson pane shows.
+/// The built-in layouts, by name, as JSON. Layout 1, "lanes", comes first and is the default; `dense` (lane EDS) is the
+/// one for S2a patches. With the `learn` feature, `learn` (lane LUI) places the `lesson` region: the editor draws it
+/// while the lesson pane shows.
 #[cfg(feature = "learn")]
 pub const BUILTIN: &[(&str, &str)] = &[
     ("lanes", include_str!("layout/lanes.json")),
+    ("dense", include_str!("layout/dense.json")),
     ("learn", include_str!("layout/learn.json")),
 ];
 
@@ -351,6 +356,19 @@ impl From<Node> for RawNode {
     }
 }
 
+/// How big the layout's cards are drawn (lane EDS). A dense layout hands its card regions `Theme::dense` and shows the
+/// intermediate tier of every card, so an S2a patch's cards fit; the rest of the editor (header, macros, overview,
+/// status) keeps the theme's own sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Density {
+    /// The theme's sizes: layout 1.
+    #[default]
+    Normal,
+    /// `size.dense.*` for the cards (`Theme::dense`).
+    Dense,
+}
+
 /// A layout: the tree of regions and the placement table. See the [module docs](self) and docs/editor.md.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -362,6 +380,9 @@ pub struct LayoutSpec {
     /// One line for people choosing between layouts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// How big the cards are drawn: `"normal"` (the default; the field is left out of the file) or `"dense"` (lane EDS).
+    #[serde(default, skip_serializing_if = "is_normal")]
+    pub density: Density,
     /// Space around the editor (default `space.gap`).
     #[serde(default = "space_gap")]
     pub margin: Size,
@@ -376,6 +397,14 @@ pub struct LayoutSpec {
 
 fn space_gap() -> Size {
     Size::token("space.gap")
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if hands over a reference"
+)]
+fn is_normal(density: &Density) -> bool {
+    *density == Density::Normal
 }
 
 impl LayoutSpec {
@@ -412,6 +441,7 @@ impl LayoutSpec {
             schema: LAYOUT_SCHEMA.to_owned(),
             name: DEFAULT.to_owned(),
             description: None,
+            density: Density::Normal,
             margin: space_gap(),
             gap: space_gap(),
             root: Node::rows(
@@ -581,6 +611,11 @@ impl Layout {
     /// The layout's name.
     pub fn name(&self) -> &str {
         &self.spec.name
+    }
+
+    /// How big its cards are drawn (lane EDS).
+    pub fn density(&self) -> Density {
+        self.spec.density
     }
 
     /// The parts placed in `region`, in the table's order.
@@ -759,6 +794,31 @@ mod tests {
         }
         assert_eq!(LayoutSpec::lanes(), LayoutSpec::builtin("lanes").unwrap());
         Layout::new(LayoutSpec::fallback(), &theme).expect("the fallback is valid");
+    }
+
+    #[test]
+    fn density_is_dense_for_the_dense_layout_only_and_written_only_when_dense() {
+        let theme = Theme::dark();
+        for (name, _) in BUILTIN {
+            let spec = LayoutSpec::builtin(name).unwrap();
+            let layout = Layout::new(spec.clone(), &theme).unwrap();
+            let want = if *name == "dense" {
+                Density::Dense
+            } else {
+                Density::Normal
+            };
+            assert_eq!(layout.density(), want, "{name}");
+            assert_eq!(
+                spec.to_json().contains("\"density\""),
+                want == Density::Dense,
+                "{name}: a normal layout's file stays as it was"
+            );
+        }
+        // A layout file written before density existed reads as normal.
+        let mut old: serde_json::Value = serde_json::from_str(BUILTIN[0].1).unwrap();
+        old.as_object_mut().unwrap().remove("density");
+        let spec = LayoutSpec::from_json(&old.to_string()).unwrap();
+        assert_eq!(spec.density, Density::Normal);
     }
 
     fn refused(json: &str) -> String {

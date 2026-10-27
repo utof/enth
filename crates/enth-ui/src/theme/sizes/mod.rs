@@ -1,6 +1,6 @@
 //! Component tokens: per-widget dimensions, in logical px at 100 % UI scale. One file per UI area, so a lane adds
 //! the dimensions of its own area in its own file: `bar`, `card`, `cards` (UI-C), `display`, `editor` (ED1), `handle`,
-//! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`. A brand-new area is a new file plus its field here.
+//! `knob`, `matrix`, `modulation` (ED2), `output` (ED2), `pane`, `tile`, `window`, `dense` (EDS: the sizes of the dense layout's cards). A brand-new area is a new file plus its field here.
 //! R1/S1 (lane S0r) pre-declared three empty areas: `recreate` (RUI), `browser` (PBU) and `add_module` (AM); R2 (lane S0l) one:
 //! `learn` (LUI); R3 (lane S0s) one: `create` (PUI); R4 and R5 (lane S0e) two: `ear` (EUI) and `duel` (DUI).
 
@@ -12,6 +12,7 @@ mod browser;
 mod card;
 mod cards;
 mod create;
+mod dense;
 mod display;
 mod duel;
 mod ear;
@@ -33,6 +34,7 @@ pub use browser::BrowserSizes;
 pub use card::CardSizes;
 pub use cards::CardsSizes;
 pub use create::CreateSizes;
+pub use dense::DenseSizes;
 pub use display::DisplaySizes;
 pub use duel::DuelSizes;
 pub use ear::EarSizes;
@@ -95,6 +97,10 @@ pub struct Sizes {
     /// The duel card: share line, paste box, verification, sealed answer, history (lane DUI; empty until it adds tokens).
     #[serde(default)]
     pub duel: DuelSizes,
+    /// Dense cards for S2a patches: the knob, cell, header, strip and display sizes a dense layout draws its cards with
+    /// (lane EDS; `Theme::dense`).
+    #[serde(default)]
+    pub dense: DenseSizes,
     /// Height of single-line controls: buttons, segmented controls, number fields.
     pub control_height: f32,
 }
@@ -123,6 +129,7 @@ impl Sizes {
             create: CreateSizes::dark(),
             ear: EarSizes::dark(),
             duel: DuelSizes::dark(),
+            dense: DenseSizes::dark(),
             control_height: 24.0,
         }
     }

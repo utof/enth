@@ -193,6 +193,45 @@ fn visible_live_data_asks_for_a_frame_every_sixtieth_of_a_second_and_no_sooner()
 }
 
 #[test]
+fn a_dense_editor_for_an_s2a_patch_sleeps_when_idle_and_runs_at_the_same_interval() {
+    // The growl reference in the dense layout (lane EDS): the layout changes sizes, not the repaint gating.
+    let growl = enth_patch::file::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/test-host/golden/enth-plugin.g2.patch.json"
+    )))
+    .expect("the golden loads")
+    .patch;
+    let mut rig = Rig::new(growl);
+    rig.editor.set_auto_dense(true);
+    let interval = rig.theme.motion.scope_interval();
+    warm_up(&mut rig);
+    assert_eq!(
+        rig.editor.report().density,
+        enth_ui::editor::layout::Density::Dense
+    );
+    // A note: the scope and the meters run, one frame every 1/60 s and no sooner.
+    rig.session.audition_on(48, 1.0).unwrap();
+    rig.session.pump();
+    for n in 0..10 {
+        (rig.render)(25);
+        assert_eq!(rig.frame(Vec::new()), interval, "frame {n}");
+    }
+    // No block since the last frame: nothing new, so the dense editor sleeps like layout 1 does (the shell took the wake
+    // flag of the blocks above).
+    let _ = (rig.wake)();
+    for n in 0..20 {
+        let delay = rig.frame(Vec::new());
+        assert_eq!(
+            delay,
+            Duration::MAX,
+            "idle frame {n} of the dense editor asked for a repaint"
+        );
+        assert_eq!(rig.editor.report().repaint, None);
+    }
+    assert!(!(rig.wake)(), "nothing new: no wake-up");
+}
+
+#[test]
 fn a_closed_editor_asks_for_nothing_and_stops_the_tap() {
     let mut rig = Rig::new(common::patches::p1_default());
     warm_up(&mut rig);
