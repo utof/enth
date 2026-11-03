@@ -54,7 +54,7 @@ serde_json = { version = "=1.0.154", features = ["float_roundtrip"] }   # MIT OR
 toml = "=1.1.8"                                     # MIT OR Apache-2.0. xtask, golden cases, eval goals
 sha2 = "=0.11.1"                                    # MIT OR Apache-2.0. Pure-Rust SHA-256: patch hashes, golden hashes (no runtime CPU dispatch)
 # Real time
-rtrb = { version = "=0.4.0", default-features = false }   # MIT OR Apache-2.0. Wait-free SPSC ring buffer: plan and event rings. No `mpsc` or unbounded channels in the engine.
+rtrb = { version = "=0.4.1", default-features = false }   # MIT OR Apache-2.0. Wait-free SPSC ring buffer: plan and event rings. No `mpsc` or unbounded channels in the engine.
 assert_no_alloc = "=1.1.2"                          # BSD-1-Clause (deny.toml allows it, ADR-0004). Debug-build tests only: release builds lack AllocDisabler.
 # Analysis
 rustfft = "=6.4.1"                                  # MIT OR Apache-2.0. Picks its code path by CPU: scores that gate pass/fail need a tolerance or a scalar path (design.md section 5)
