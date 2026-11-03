@@ -109,7 +109,7 @@ libc = "=0.2.191"                                   # MIT OR Apache-2.0. Test-ho
 # crates.io API; lanes S0l and S0s add each to the crate that uses it (that changes Cargo.lock), then the coordinator
 # alone edits this table. `toml` and `rayon` above are reused (rayon also in enth-plugin for the create pool, L8 only).
 # R2 (enth-learn, L5, wasm-checked): lesson markdown and the .enthpack reader.
-pulldown-cmark = { version = "=0.13.4", default-features = false }   # MIT. Block AST of a lesson step (report 02 §3); no HTML output
+pulldown-cmark = { version = "=0.13.5", default-features = false }   # MIT. Block AST of a lesson step (report 02 §3); no HTML output
 rawzip = "=0.5.2"                                   # MIT. Zero-dependency zip reader for .enthpack; refuse renamed or duplicate entries (report 02 §5)
 miniz_oxide = "=0.9.1"                              # MIT OR Zlib OR Apache-2.0. Deflate for .enthpack, pinned so `xtask pack` builds reproducibly
 # R3 (enth-plugin and enth-cli, L8): audio decoders without MPL-2.0 (symphonia needs the owner's OK; report 03 §7). Lane S0s
