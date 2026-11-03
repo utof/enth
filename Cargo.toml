@@ -58,7 +58,7 @@ rtrb = { version = "=0.4.0", default-features = false }   # MIT OR Apache-2.0. W
 assert_no_alloc = "=1.1.2"                          # BSD-1-Clause (deny.toml allows it, ADR-0004). Debug-build tests only: release builds lack AllocDisabler.
 # Analysis
 rustfft = "=6.4.1"                                  # MIT OR Apache-2.0. Picks its code path by CPU: scores that gate pass/fail need a tolerance or a scalar path (design.md section 5)
-realfft = "=3.5.0"                                  # MIT. Real-input wrapper for rustfft
+realfft = "=3.5.1"                                  # MIT. Real-input wrapper for rustfft
 ebur128 = "=0.1.10"                                 # MIT. EBU R128 loudness (LUFS, true peak)
 # Tests and benchmarks (dev-dependencies only)
 proptest = { version = "=1.12.0", default-features = false, features = ["std", "handle-panics"] }   # MIT OR Apache-2.0. No `fork`/`timeout` (nextest isolates tests per process); `handle-panics` keeps shrinking quiet. Gate seed: .cargo/config.toml, policy in .config/nextest.toml
